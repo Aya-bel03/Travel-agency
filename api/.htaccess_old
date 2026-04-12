@@ -1,0 +1,37 @@
+# Configuration Apache pour l'API PHP
+
+# Activer le module rewrite
+RewriteEngine On
+
+# Autoriser les requêtes CORS
+
+</IfModule>
+
+# Protection contre l'accès aux fichiers sensibles
+<FilesMatch "^\.">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Désactiver l'affichage des répertoires
+Options -Indexes
+
+# Encoder les réponses en UTF-8
+AddDefaultCharset UTF-8
+
+# Type MIME pour JSON
+AddType application/json .json
+
+# Compression gzip
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+</IfModule>
+
+# Cache pour les ressources statiques
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+</IfModule>
