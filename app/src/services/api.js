@@ -1,200 +1,216 @@
 /**
- * Service API avec Axios
- * Configuration et méthodes pour communiquer avec le backend PHP
+ * Service API - MODE DÉMO STATIQUE (GitHub Pages)
  */
 
-import axios from 'axios';
+import { VOYAGES } from '../data/voyages';
 
-// URL de base de l'API PHP
-// Modifier selon votre configuration XAMPP
-const API_BASE_URL = 'http://localhost/Travel-Agency/api';
+const KEYS = {
+  users: 'va_users',
+  reservations: 'va_reservations',
+  token: 'token',
+  user: 'user',
+};
 
-// Créer une instance Axios
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 10000,
-});
-
-// Intercepteur pour ajouter le token d'authentification
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+const read = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
   }
-);
-
-// Intercepteur pour gérer les erreurs
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Token expiré ou invalide
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
+};
+const write = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* localStorage indisponible (navigation privée...) */
   }
-);
+};
+
+// Petit délai pour imiter un appel réseau
+const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
+
+// Hash simple (démo uniquement, ce n'est PAS sécurisé)
+const hash = (str) => btoa(unescape(encodeURIComponent(str)));
+const makeToken = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
 
 // ==================== AUTHENTIFICATION ====================
 
-/**
- * Inscription d'un nouvel utilisateur
- * @param {Object} userData - { nom, prenom, email, password }
- */
-export const register = async (userData) => {
-  try {
-    const response = await api.post('/register.php', userData);
-    if (response.data.token) {
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-    }
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { error: 'Erreur de connexion' };
+export const register = async ({ nom, prenom, email, password }) => {
+  await wait();
+  if (!nom || !prenom || !email || !password) throw { error: 'Tous les champs sont requis' };
+  if (password.length < 6) throw { error: 'Le mot de passe doit contenir au moins 6 caractères' };
+
+  const users = read(KEYS.users, []);
+  if (users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())) {
+    throw { error: 'Cet email est déjà utilisé' };
   }
+
+  const user = {
+    id: Date.now(),
+    nom: nom.trim(),
+    prenom: prenom.trim(),
+    email: email.trim(),
+  };
+  users.push({ ...user, password: hash(password) });
+  write(KEYS.users, users);
+
+  const token = makeToken();
+  localStorage.setItem(KEYS.token, token);
+  write(KEYS.user, user);
+  return { success: true, message: 'Inscription réussie', user, token };
 };
 
-/**
- * Connexion d'un utilisateur
- * @param {Object} credentials - { email, password }
- */
-export const login = async (credentials) => {
-  try {
-    const response = await api.post('/login.php', credentials);
-    if (response.data.token) {
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-    }
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { error: 'Erreur de connexion' };
-  }
+export const login = async ({ email, password }) => {
+  await wait();
+  const users = read(KEYS.users, []);
+  const found = users.find(
+    (u) => u.email.toLowerCase() === (email || '').trim().toLowerCase() && u.password === hash(password || '')
+  );
+  if (!found) throw { error: 'Email ou mot de passe incorrect' };
+
+  const { password: _pw, ...user } = found;
+  const token = makeToken();
+  localStorage.setItem(KEYS.token, token);
+  write(KEYS.user, user);
+  return { success: true, message: 'Connexion réussie', user, token };
 };
 
-/**
- * Déconnexion de l'utilisateur
- */
 export const logout = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
+  localStorage.removeItem(KEYS.token);
+  localStorage.removeItem(KEYS.user);
 };
 
-/**
- * Récupérer l'utilisateur connecté
- */
-export const getCurrentUser = () => {
-  const user = localStorage.getItem('user');
-  return user ? JSON.parse(user) : null;
-};
+export const getCurrentUser = () => read(KEYS.user, null);
 
-/**
- * Vérifier si l'utilisateur est connecté
- */
-export const isAuthenticated = () => {
-  return !!localStorage.getItem('token');
-};
+export const isAuthenticated = () => !!localStorage.getItem(KEYS.token);
 
 // ==================== VOYAGES ====================
 
-/**
- * Récupérer tous les voyages
- * @param {Object} params - { type, search }
- */
+const normalize = (s) =>
+  (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
 export const getVoyages = async (params = {}) => {
-  try {
-    const queryParams = new URLSearchParams();
-    if (params.type) queryParams.append('type', params.type);
-    if (params.search) queryParams.append('search', params.search);
-    
-    const url = `/voyages.php${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
-    const response = await api.get(url);
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { error: 'Erreur lors de la récupération des voyages' };
+  await wait(150);
+  let voyages = [...VOYAGES];
+
+  if (params.type === 'local' || params.type === 'international') {
+    voyages = voyages.filter((v) => v.type === params.type);
   }
+  if (params.search && params.search.trim()) {
+    const q = normalize(params.search.trim());
+    voyages = voyages.filter((v) =>
+      [v.destination, v.wilaya, v.description].some((field) => normalize(field).includes(q))
+    );
+  }
+
+  return {
+    success: true,
+    count: voyages.length,
+    voyages,
+    voyages_locaux: voyages.filter((v) => v.type === 'local'),
+    voyages_internationaux: voyages.filter((v) => v.type === 'international'),
+  };
 };
 
-/**
- * Récupérer un voyage par ID
- * @param {number} id
- */
 export const getVoyageById = async (id) => {
-  try {
-    const response = await api.get(`/voyages.php?id=${id}`);
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { error: 'Erreur lors de la récupération du voyage' };
-  }
+  await wait(100);
+  const voyage = VOYAGES.find((v) => v.id === Number(id));
+  if (!voyage) throw { error: 'Voyage non trouvé' };
+  return { success: true, voyage };
 };
 
-/**
- * Créer un nouveau voyage (admin)
- * @param {Object} voyageData
- */
-export const createVoyage = async (voyageData) => {
-  try {
-    const response = await api.post('/voyages.php', voyageData);
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { error: 'Erreur lors de la création du voyage' };
-  }
+// Création de voyage : non disponible en mode démo
+export const createVoyage = async () => {
+  throw { error: 'Création de voyage indisponible en mode démo' };
 };
 
 // ==================== RÉSERVATIONS ====================
 
-/**
- * Récupérer les réservations de l'utilisateur
- * @param {number} userId
- * @param {string} type - 'local' ou 'international'
- */
 export const getReservations = async (userId, type = null) => {
-  try {
-    let url = `/reservations.php?user_id=${userId}`;
-    if (type) url += `&type=${type}`;
-    
-    const response = await api.get(url);
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { error: 'Erreur lors de la récupération des réservations' };
+  await wait(150);
+  const all = read(KEYS.reservations, []).filter((r) => r.user_id === Number(userId));
+
+  let reservations = all
+    .map((r) => {
+      const v = VOYAGES.find((x) => x.id === r.voyage_id);
+      if (!v) return null;
+      return {
+        ...r,
+        voyage_type: v.type,
+        destination: v.destination,
+        wilaya: v.wilaya,
+        prix: v.prix,
+        date_depart: v.date_depart,
+        date_retour: v.date_retour,
+        description: v.description,
+        image: v.image,
+        prix_total: v.prix * r.nb_personnes,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.date_reservation) - new Date(a.date_reservation));
+
+  if (type === 'local' || type === 'international') {
+    reservations = reservations.filter((r) => r.voyage_type === type);
   }
+
+  return {
+    success: true,
+    count: reservations.length,
+    reservations,
+    reservations_locaux: reservations.filter((r) => r.voyage_type === 'local'),
+    reservations_internationaux: reservations.filter((r) => r.voyage_type === 'international'),
+  };
 };
 
-/**
- * Créer une réservation
- * @param {Object} reservationData - { user_id, voyage_id, nb_personnes }
- */
-export const createReservation = async (reservationData) => {
-  try {
-    const response = await api.post('/reservations.php', reservationData);
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { error: 'Erreur lors de la création de la réservation' };
+export const createReservation = async ({ user_id, voyage_id, nb_personnes = 1 }) => {
+  await wait();
+  const userId = Number(user_id);
+  const voyageId = Number(voyage_id);
+  const nb = Number(nb_personnes) || 1;
+
+  if (nb < 1) throw { error: 'Le nombre de personnes doit être au moins 1' };
+
+  const voyage = VOYAGES.find((v) => v.id === voyageId);
+  if (!voyage) throw { error: 'Voyage non trouvé' };
+
+  const reservations = read(KEYS.reservations, []);
+  if (reservations.some((r) => r.user_id === userId && r.voyage_id === voyageId)) {
+    throw { error: 'Vous avez déjà réservé ce voyage' };
   }
+
+  const reservation = {
+    id: Date.now(),
+    user_id: userId,
+    voyage_id: voyageId,
+    nb_personnes: nb,
+    date_reservation: new Date().toISOString(),
+  };
+  reservations.push(reservation);
+  write(KEYS.reservations, reservations);
+
+  return {
+    success: true,
+    message: 'Réservation créée avec succès',
+    reservation_id: reservation.id,
+    prix_total: voyage.prix * nb,
+  };
 };
 
-/**
- * Annuler une réservation
- * @param {number} reservationId
- * @param {number} userId
- */
 export const cancelReservation = async (reservationId, userId) => {
-  try {
-    const response = await api.delete(`/reservations.php?id=${reservationId}&user_id=${userId}`);
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { error: 'Erreur lors de l\'annulation' };
-  }
+  await wait();
+  const reservations = read(KEYS.reservations, []);
+  const exists = reservations.some((r) => r.id === Number(reservationId) && r.user_id === Number(userId));
+  if (!exists) throw { error: 'Réservation non trouvée ou non autorisée' };
+
+  write(
+    KEYS.reservations,
+    reservations.filter((r) => r.id !== Number(reservationId))
+  );
+  return { success: true, message: 'Réservation annulée avec succès' };
 };
 
-export default api;
+export default {};
+
