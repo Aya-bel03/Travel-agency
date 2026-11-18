@@ -40,6 +40,20 @@ const Navbar = () => {
 
   const isActive = (path) => location.pathname === path;
 
+  // Avec HashRouter, "/#voyages" ne scrolle pas tout seul : on le gère à la main
+  const goToVoyages = (e) => {
+    e.preventDefault();
+    setIsMenuOpen(false);
+    const scroll = () =>
+      document.getElementById('voyages')?.scrollIntoView({ behavior: 'smooth' });
+    if (location.pathname !== '/') {
+      navigate('/');
+      setTimeout(scroll, 150);
+    } else {
+      scroll();
+    }
+  };
+
   const navLinks = [
     { path: '/', label: 'Accueil', icon: Home },
     { path: '/#voyages', label: 'Voyages', icon: Plane },
@@ -80,7 +94,8 @@ const Navbar = () => {
             {navLinks.map((link) => (
               <Link
                 key={link.path}
-                to={link.path}
+                to={link.path === '/#voyages' ? '/' : link.path}
+                onClick={link.path === '/#voyages' ? goToVoyages : undefined}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   isActive(link.path)
                     ? scrolled
@@ -180,7 +195,7 @@ const Navbar = () => {
               {navLinks.map((link) => (
                 <Link
                   key={link.path}
-                  to={link.path}
+                  to={link.path === '/#voyages' ? '/' : link.path}
                   className={`px-4 py-3 rounded-lg text-sm font-medium flex items-center ${
                     isActive(link.path)
                       ? scrolled
@@ -190,7 +205,7 @@ const Navbar = () => {
                       ? 'text-gray-700 hover:bg-gray-100'
                       : 'text-white/90 hover:bg-white/20'
                   }`}
-                  onClick={() => setIsMenuOpen(false)}
+                  onClick={link.path === '/#voyages' ? goToVoyages : () => setIsMenuOpen(false)}
                 >
                   <link.icon className="h-4 w-4 mr-2" />
                   {link.label}
